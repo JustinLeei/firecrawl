@@ -89,6 +89,57 @@ export async function parseMarkdown(
   var turndownPluginGfm = require("joplin-turndown-plugin-gfm");
 
   const turndownService = new TurndownService();
+  
+  // 添加处理微信文章图片的规则
+  turndownService.addRule("wechatImages", {
+    filter: function(node) {
+      // 检查是否是图片节点
+      if (node.nodeName !== "IMG") return false;
+      
+      // 条件1：有data-src属性
+      const hasDataSrc = node.getAttribute("data-src") !== null;
+      
+      // 条件2：有特定的类名
+      const className = node.className || "";
+      const hasWechatClass = typeof className === 'string' && 
+        (className.includes("rich_pages") || className.includes("wxw-img"));
+      
+      // 条件3：src包含微信特定参数
+      const src = node.getAttribute("src") || "";
+      const hasWechatSrc = src.includes("wx_fmt=") || src.includes("mmbiz.qpic.cn");
+      
+      // 任一条件匹配即为微信图片
+      return hasDataSrc || hasWechatClass || hasWechatSrc;
+    },
+    replacement: function(content, node) {
+      // 优先使用data-src属性，其次使用src
+      let src = node.getAttribute("data-src") || node.getAttribute("src") || "";
+      
+      // 如果src是SVG占位符并且没有data-src，尝试从原始HTML中提取更多信息
+      if (src.includes("data:image/svg") && !node.getAttribute("data-src")) {
+        // 查找最接近的可能属性
+        const possibleAttrs = ["data-backsrc", "data-fail-src", "data-original", "data-backupSrc"];
+        for (const attr of possibleAttrs) {
+          const attrValue = node.getAttribute(attr);
+          if (attrValue && attrValue.startsWith("http")) {
+            src = attrValue;
+            break;
+          }
+        }
+      }
+      
+      // 移除微信特定的懒加载参数
+      src = src.replace(/&wx_lazy=\d+/, "").replace(/&wx_co=\d+/, "");
+      
+      const alt = node.getAttribute("alt") || "图片";
+      const title = node.getAttribute("title") || "";
+      
+      return title 
+        ? `![${alt}](${src} "${title}")`
+        : `![${alt}](${src})`;
+    }
+  });
+  
   turndownService.addRule("inlineLink", {
     filter: function (node, options) {
       return (
